@@ -1,34 +1,37 @@
 /*
- * The server will open the box via MQTT
+ * The server will open the cabinet via MQTT
  * 
  * author: Long-Jian Guo, Lu-Yu Jiang
  * date: 2019-03-24
- * function: control the breakfast box including check the
- * status and open the box ranging from one to twenty four
+ * function: open the cabinet ranging from one to twenty four
+ * 
+ * update No.1
+ * update: 2019-04-20
+ * update log: add callback towards request via json
  */
 
 #include <SoftwareSerial.h>
 #include <PubSubClient.h>
 #include <ESP8266WiFi.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "crc16.h"
+#include "cJSON.h"
 
-const char* ssid = "your wifi ssid";
-const char* password = "your wifi password";
+const char* ssid = "your ssid";
+const char* password = "your password";
 
-const char* mqttServer = "your MQTT server";
-const int mqttPort = ;//your mqtt port
-const char* topic = "your MQTT topic";
+const char* mqttServer = "your mqtt server";
+const int mqttPort = 1883;
+const char* topic = "your mqtt topic";
 
 //initialize MQTT
 WiFiClient espClient;
 PubSubClient client(espClient);
 
 //define the softserial
-SoftwareSerial boxSerial(12, 14, false, 16);//软串口D6 D5
-
-int boxStatus[24];
-char suffix[24] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 
-'R', 'S', 'T', 'U', 'V', 'W', 'X'};
+SoftwareSerial boxSerial(12, 14, false, 16);//SoftwareSerial D6 D5
 
 //传柜门号码，即可打开对应柜门
 void openBox(int boxNum){
@@ -47,19 +50,55 @@ void callback(char* topicTem, byte* payload, unsigned int msg_length){
   Serial.print("Message arrived [");
   Serial.print(topicTem);
   Serial.print("] ");
+
   for(int i = 0; i < msg_length; i++){
     Serial.print((char)payload[i]);
   }
-  if(msg_length == 1){
-    int lockerID = (int)(payload[0]-48);
-    openBox(lockerID);
-  }
-  if(msg_length == 2){
-    int lockerID = ((int)(payload[0]-48)) * 10 + (int)(payload[1]-48);
-    openBox(lockerID);
+  //byte* msg[50] = "{\"orderID\":\"204\",\"cabinetID\":\"14\"}";
+  Serial.println();
+  
+  cJSON* cjson = cJSON_Parse((char*)payload);
+  if(cjson == NULL){
+      Serial.println("Json pack into cjson error.");
   }else{
-    Serial.print("wrong id");
+      cJSON_Print(cjson);
   }
+
+  int orderID = cJSON_GetObjectItem(cjson, "orderID")->valueint;
+  int cabinetID = cJSON_GetObjectItem(cjson, "cabinetID")->valueint;
+
+  Serial.print("orderID: ");
+  Serial.println(orderID);
+  
+  Serial.print("cabinetID: ");
+  Serial.println(cabinetID);
+//  int len = strlen(cabinetID);
+//  int cabinetNum;
+//  if(len == 1){
+//      cabinetNum = (int)cabinetID[0] - 48;
+//      Serial.println(cabinetNum);
+//  }else if(len == 2){
+//      cabinetNum = ((int)cabinetID[0] - 48) * 10 + (int)cabinetID[1] - 48;
+//      Serial.println(cabinetNum);
+//  }
+  
+  openBox(cabinetID);
+
+  char orderIDTemp[5];
+  itoa(orderID, orderIDTemp, 10);
+  
+  char ans[20] = "";
+  strcat(ans, "{\"orderID:\",");
+  strcat(ans, orderIDTemp);
+  strcat(ans, "}");
+  
+  if(client.publish("success", ans) == true){
+    Serial.println("Success sending message.");
+  }else{
+    Serial.println("Error sending message.");
+  }
+  
+  cJSON_Delete(cjson);
   Serial.println();
 }
 
